@@ -147,7 +147,7 @@
 <body>
   <header>
     <h1>GROUP 5 ESP32 Weather Dashboard</h1>
-    <p>DHT22 · HiveMQ Cloud · Remote LED Control</p>
+    <p>DHT22 · BME280 · Wind · HiveMQ Cloud · Remote LED Control</p>
     <div class="status-bar">
       <div class="pill">
         <span class="dot" id="mqtt-dot"></span>
@@ -166,20 +166,39 @@
 
   <main>
     <div class="grid">
+      <!-- Temperature -->
       <div class="card">
         <h2>Temperature</h2>
-        <p class="label">Ambient temperature from DHT22</p>
+        <p class="label">Ambient temperature</p>
         <div class="value" id="temp-value">--.-<span class="unit">°C</span></div>
         <p class="small" id="temp-raw">Raw: --</p>
       </div>
 
+      <!-- Humidity -->
       <div class="card">
         <h2>Humidity</h2>
-        <p class="label">Relative humidity from DHT22</p>
+        <p class="label">Relative humidity</p>
         <div class="value" id="hum-value">--.-<span class="unit">%</span></div>
         <p class="small" id="hum-raw">Raw: --</p>
       </div>
 
+      <!-- Wind Speed -->
+      <div class="card">
+        <h2>Wind Speed</h2>
+        <p class="label">Measured from DIY anemometer</p>
+        <div class="value" id="wind-speed-value">--.-<span class="unit"> m/s</span></div>
+        <p class="small" id="wind-speed-raw">Raw: --</p>
+      </div>
+
+      <!-- Wind Direction -->
+      <div class="card">
+        <h2>Wind Direction</h2>
+        <p class="label">Current wind direction (N / E / S / W)</p>
+        <div class="value" id="wind-dir-value">--</div>
+        <p class="small" id="wind-dir-raw">Raw: --</p>
+      </div>
+
+      <!-- LED Control -->
       <div class="card">
         <h2>LED Indicator</h2>
         <p class="label">Remote control via MQTT topic <code>cpe102/group5/led</code></p>
@@ -194,12 +213,15 @@
         <p class="small" id="led-msg">Waiting for command…</p>
       </div>
 
+      <!-- Info -->
       <div class="card">
         <h2>Device Info</h2>
         <p class="label">Group 5 · CPE 102 Final Project</p>
         <p class="small">
           Temp topic: <code>cpe102/group5/temperature</code><br />
           Humidity topic: <code>cpe102/group5/humidity</code><br />
+          Wind speed topic: <code>cpe102/group5/windspeed</code><br />
+          Wind direction topic: <code>cpe102/group5/winddir</code><br />
           LED topic: <code>cpe102/group5/led</code>
         </p>
       </div>
@@ -217,12 +239,14 @@
     const MQTT_URL =
       "wss://cef384719390434ea2501c6c4845c027.s1.eu.hivemq.cloud:8884/mqtt";
 
-    const MQTT_USERNAME = "LerDemo1"; // TODO: 
-    const MQTT_PASSWORD = "LerDemo1"; // TODO: 
+    const MQTT_USERNAME = "LerDemo1"; // TODO: palitan sa tunay mong MQTT username
+    const MQTT_PASSWORD = "LerDemo1"; // TODO: palitan sa tunay mong MQTT password
 
-    const TEMP_TOPIC = "cpe102/group5/temperature";
-    const HUM_TOPIC = "cpe102/group5/humidity";
-    const LED_TOPIC = "cpe102/group5/led";
+    const TEMP_TOPIC       = "cpe102/group5/temperature";
+    const HUM_TOPIC        = "cpe102/group5/humidity";
+    const WIND_SPEED_TOPIC = "cpe102/group5/windspeed";
+    const WIND_DIR_TOPIC   = "cpe102/group5/winddir";
+    const LED_TOPIC        = "cpe102/group5/led";
 
     // ---------- UI ELEMENTS ----------
     const mqttDot = document.getElementById("mqtt-dot");
@@ -235,6 +259,11 @@
     const tempRawEl = document.getElementById("temp-raw");
     const humValueEl = document.getElementById("hum-value");
     const humRawEl = document.getElementById("hum-raw");
+
+    const windSpeedValueEl = document.getElementById("wind-speed-value");
+    const windSpeedRawEl   = document.getElementById("wind-speed-raw");
+    const windDirValueEl   = document.getElementById("wind-dir-value");
+    const windDirRawEl     = document.getElementById("wind-dir-raw");
 
     const ledStatusEl = document.getElementById("led-status");
     const ledMsgEl = document.getElementById("led-msg");
@@ -263,6 +292,8 @@
 
       client.subscribe(TEMP_TOPIC);
       client.subscribe(HUM_TOPIC);
+      client.subscribe(WIND_SPEED_TOPIC);
+      client.subscribe(WIND_DIR_TOPIC);
       client.subscribe(LED_TOPIC);
     });
 
@@ -298,6 +329,7 @@
         tempRawEl.textContent = "Raw: " + msg;
         sensorStatus.textContent = "Sensor: OK";
         sensorDot.classList.add("ok");
+
       } else if (topic === HUM_TOPIC) {
         const value = parseFloat(msg);
         humValueEl.innerHTML =
@@ -306,6 +338,26 @@
         humRawEl.textContent = "Raw: " + msg;
         sensorStatus.textContent = "Sensor: OK";
         sensorDot.classList.add("ok");
+
+      } else if (topic === WIND_SPEED_TOPIC) {
+        const value = parseFloat(msg);
+        windSpeedValueEl.innerHTML =
+          (isNaN(value) ? "--.-" : value.toFixed(1)) +
+          '<span class="unit"> m/s</span>'; // palitan kung km/h ka
+        windSpeedRawEl.textContent = "Raw: " + msg;
+
+      } else if (topic === WIND_DIR_TOPIC) {
+        // Puwede ka mag-send ng angle (0–360) o direct text (N/E/S/W)
+        const angle = parseFloat(msg);
+        let compass;
+        if (isNaN(angle)) {
+          compass = msg.trim().toUpperCase(); // assume "N", "E", "S", "W"
+        } else {
+          compass = angleToCardinal(angle);
+        }
+        windDirValueEl.textContent = compass;
+        windDirRawEl.textContent = "Raw: " + msg;
+
       } else if (topic === LED_TOPIC) {
         updateLedStatus(msg);
       }
@@ -331,6 +383,22 @@
         ledStatusEl.classList.add("off");
         ledStatusEl.classList.remove("on");
       }
+    }
+
+    // Convert angle (0–360) to simple N/E/S/W
+    function angleToCardinal(angle) {
+      if (isNaN(angle)) return "--";
+      let a = angle % 360;
+      if (a < 0) a += 360;
+
+      // N: 315–360 or 0–45
+      // E: 45–135
+      // S: 135–225
+      // W: 225–315
+      if (a >= 315 || a < 45) return "N";
+      if (a >= 45 && a < 135) return "E";
+      if (a >= 135 && a < 225) return "S";
+      return "W";
     }
   </script>
 </body>
