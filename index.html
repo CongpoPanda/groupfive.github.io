@@ -2,469 +2,182 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>GROUP 5 ESP32 Weather Dashboard</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Group 5 Weather Dashboard</title>
   <style>
     body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0f172a;
-      color: #e5e7eb;
+      font-family: Arial, sans-serif;
+      background: #0b1726;
+      color: #f5f5f5;
       margin: 0;
-      padding: 0;
-      display: flex;
-      flex-direction: column;
-      min-height: 100vh;
-      align-items: center;
+      padding: 20px;
     }
-    header {
+    h1 {
       text-align: center;
-      padding: 1.2rem 1rem 0.5rem;
+      margin-bottom: 10px;
     }
-    header h1 {
-      margin: 0;
-      font-size: 1.5rem;
-    }
-    header p {
-      margin: 0.2rem 0;
-      font-size: 0.85rem;
-      color: #9ca3af;
-    }
-    .status-bar {
-      display: flex;
-      gap: 0.75rem;
-      flex-wrap: wrap;
-      justify-content: center;
-      margin-bottom: 0.5rem;
-      font-size: 0.8rem;
-    }
-    .pill {
-      padding: 0.25rem 0.6rem;
-      border-radius: 999px;
-      background: #111827;
-      border: 1px solid #1f2937;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-    }
-    .dot {
-      width: 0.5rem;
-      height: 0.5rem;
-      border-radius: 999px;
-      background: #6b7280;
-    }
-    .dot.ok {
-      background: #22c55e;
-    }
-    .dot.err {
-      background: #ef4444;
-    }
-    main {
-      width: 100%;
-      max-width: 900px;
-      padding: 0.5rem 1rem 1.5rem;
-      box-sizing: border-box;
+    .status {
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 0.9rem;
+      color: #aaa;
     }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 1rem;
+      gap: 15px;
+      max-width: 900px;
+      margin: 0 auto;
     }
     .card {
-      background: #020617;
-      border-radius: 0.75rem;
-      border: 1px solid #1f2937;
-      padding: 0.9rem;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-      box-sizing: border-box;
+      background: #182335;
+      border-radius: 10px;
+      padding: 15px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.4);
     }
-    .card h2 {
-      margin: 0;
-      font-size: 0.95rem;
-      color: #e5e7eb;
-    }
-    .card p.label {
-      margin: 0.15rem 0 0.6rem;
-      font-size: 0.75rem;
-      color: #9ca3af;
-    }
-    .value {
-      font-size: 1.8rem;
-      font-weight: 600;
-      margin: 0.2rem 0;
-      display: flex;
-      align-items: center;
-      gap: 0.35rem;
-    }
-    .value span.unit {
+    .card-title {
       font-size: 0.9rem;
-      color: #9ca3af;
-      margin-left: 0.1rem;
+      color: #ffda79;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
     }
-    .small {
-      font-size: 0.75rem;
-      color: #9ca3af;
+    .card-value {
+      font-size: 1.6rem;
+      font-weight: bold;
     }
-    .led-status {
-      font-weight: 600;
-    }
-    .led-status.on {
-      color: #22c55e;
-    }
-    .led-status.off {
-      color: #ef4444;
-    }
-    .btn-row {
-      display: flex;
-      gap: 0.5rem;
-      margin-top: 0.6rem;
-      flex-wrap: wrap;
-    }
-    button {
-      border-radius: 999px;
-      border: 1px solid #1f2937;
-      padding: 0.4rem 0.9rem;
-      font-size: 0.8rem;
-      cursor: pointer;
-      background: #111827;
-      color: #e5e7eb;
-      transition: background 0.15s, transform 0.1s, border-color 0.15s;
-    }
-    button:hover {
-      background: #1f2937;
-    }
-    button:active {
-      transform: translateY(1px);
-    }
-    button.primary {
-      border-color: #22c55e;
-    }
-    footer {
-      margin-top: auto;
-      padding: 0.75rem;
-      font-size: 0.7rem;
-      color: #6b7280;
-      text-align: center;
+    .emoji {
+      font-size: 2rem;
+      margin-left: 10px;
     }
   </style>
 </head>
 <body>
-  <header>
-    <h1>GROUP 5 ESP32 Weather Dashboard</h1>
-    <p>DHT22 · BME280 · Wind · HiveMQ Cloud · Remote LED Control</p>
-    <div class="status-bar">
-      <div class="pill">
-        <span class="dot" id="mqtt-dot"></span>
-        <span id="mqtt-status">MQTT: Connecting…</span>
-      </div>
-      <div class="pill">
-        <span class="dot" id="sensor-dot"></span>
-        <span id="sensor-status">Sensor: Waiting…</span>
-      </div>
-      <div class="pill">
-        <span>Last update:</span>
-        <span id="last-update">None</span>
-      </div>
+  <h1>GROUP 5 WEATHER DASHBOARD</h1>
+  <div class="status" id="connStatus">Connecting to MQTT...</div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">Temperature (°C)</div>
+      <div class="card-value" id="tempVal">--</div>
     </div>
-  </header>
-
-  <main>
-    <div class="grid">
-      <!-- Temperature -->
-      <div class="card">
-        <h2>Temperature</h2>
-        <p class="label">Ambient temperature</p>
-        <div class="value" id="temp-value">
-          <span id="temp-number">--.-</span><span class="unit">°C</span>
-          <span id="temp-emoji">🌡️</span>
-        </div>
-        <p class="small" id="temp-raw">Raw: --</p>
-      </div>
-
-      <!-- Humidity -->
-      <div class="card">
-        <h2>Humidity</h2>
-        <p class="label">Relative humidity</p>
-        <div class="value" id="hum-value">
-          <span id="hum-number">--.-</span><span class="unit">%</span>
-          <span id="hum-emoji">💧</span>
-        </div>
-        <p class="small" id="hum-raw">Raw: --</p>
-      </div>
-
-      <!-- Wind (speed + direction) -->
-      <div class="card">
-        <h2>Wind</h2>
-        <p class="label">Speed and direction</p>
-        <div class="value" id="wind-speed-value">
-          <span id="wind-speed-number">--.-</span><span class="unit"> m/s</span>
-        </div>
-        <p class="small">
-          Direction:
-          <span id="wind-dir-value">--</span>
-        </p>
-        <p class="small" id="wind-speed-raw">Speed raw: --</p>
-        <p class="small" id="wind-dir-raw">Dir raw: --</p>
-      </div>
-
-      <!-- Air Pressure -->
-      <div class="card">
-        <h2>Air Pressure</h2>
-        <p class="label">Atmospheric pressure</p>
-        <div class="value" id="pressure-value">
-          <span id="pressure-number">----.-</span><span class="unit"> hPa</span>
-          <span id="pressure-emoji">⛅</span>
-        </div>
-        <p class="small" id="pressure-raw">Raw: --</p>
-      </div>
-
-      <!-- LED Control -->
-      <div class="card">
-        <h2>LED Indicator</h2>
-        <p class="label">Remote control via MQTT topic <code>cpe102/group5/led</code></p>
-        <p class="small">
-          Status:
-          <span class="led-status off" id="led-status">OFF</span>
-        </p>
-        <div class="btn-row">
-          <button class="primary" onclick="setLed(true)">Turn ON</button>
-          <button onclick="setLed(false)">Turn OFF</button>
-        </div>
-        <p class="small" id="led-msg">Waiting for command…</p>
-      </div>
-
-      <!-- Info -->
-      <div class="card">
-        <h2>Device Info</h2>
-        <p class="label">Group 5 · CPE 102 Final Project</p>
-        <p class="small">
-          Temp topic: <code>cpe102/group5/temperature</code><br />
-          Humidity topic: <code>cpe102/group5/humidity</code><br />
-          Wind speed topic: <code>cpe102/group5/windspeed</code><br />
-          Wind direction topic: <code>cpe102/group5/winddir</code><br />
-          Air pressure topic: <code>cpe102/group5/pressure</code><br />
-          LED topic: <code>cpe102/group5/led</code>
-        </p>
-      </div>
+    <div class="card">
+      <div class="card-title">Humidity (%)</div>
+      <div class="card-value" id="humVal">--</div>
     </div>
-  </main>
+    <div class="card">
+      <div class="card-title">Pressure (hPa)</div>
+      <div class="card-value" id="pressVal">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Wind Speed (m/s)</div>
+      <div class="card-value" id="windSpeedVal">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Wind Direction</div>
+      <div class="card-value" id="windDirVal">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Rain Status</div>
+      <div class="card-value" id="rainVal">--</div>
+    </div>
+  </div>
 
-  <footer>
-    Hosted on GitHub Pages · Uses MQTT over WebSocket (wss) to HiveMQ Cloud
-  </footer>
-
-  <!-- MQTT.js from CDN -->
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <!-- MQTT over WebSocket client (Paho) -->
+  <script src="https://unpkg.com/paho-mqtt/mqttws31.min.js"></script>
   <script>
-    // ---------- CONFIGURATION ----------
-    const MQTT_URL =
-      "wss://cef384719390434ea2501c6c4845c027.s1.eu.hivemq.cloud:8884/mqtt";
+    // ==== CONFIG: Palitan mo ito ayon sa HiveMQ Cloud mo ====
+    const MQTT_HOST = "wss://cef384719390434ea2501c6c4845c027.s1.eu.hivemq.cloud:8884/mqtt";
+    const MQTT_USER = "LerDemo1";
+    const MQTT_PASS = "LerDemo1";
 
-    const MQTT_USERNAME = "LerDemo1"; // palitan kung iba na credentials mo
-    const MQTT_PASSWORD = "LerDemo1";
+    const tempTopic     = "cpe102/group5/temperature";
+    const humTopic      = "cpe102/group5/humidity";
+    const pressureTopic = "cpe102/group5/pressure";
+    const windSpeedTopic= "cpe102/group5/windspeed";
+    const windDirTopic  = "cpe102/group5/winddir";
+    const rainTopic     = "cpe102/group5/rain";
 
-    const TEMP_TOPIC       = "cpe102/group5/temperature";
-    const HUM_TOPIC        = "cpe102/group5/humidity";
-    const WIND_SPEED_TOPIC = "cpe102/group5/windspeed";
-    const WIND_DIR_TOPIC   = "cpe102/group5/winddir";
-    const PRESSURE_TOPIC   = "cpe102/group5/pressure";
-    const LED_TOPIC        = "cpe102/group5/led";
+    const connStatusEl  = document.getElementById("connStatus");
+    const tempEl        = document.getElementById("tempVal");
+    const humEl         = document.getElementById("humVal");
+    const pressEl       = document.getElementById("pressVal");
+    const windSpeedEl   = document.getElementById("windSpeedVal");
+    const windDirEl     = document.getElementById("windDirVal");
+    const rainEl        = document.getElementById("rainVal");
 
-    // ---------- UI ELEMENTS ----------
-    const mqttDot = document.getElementById("mqtt-dot");
-    const mqttStatus = document.getElementById("mqtt-status");
-    const sensorDot = document.getElementById("sensor-dot");
-    const sensorStatus = document.getElementById("sensor-status");
-    const lastUpdateEl = document.getElementById("last-update");
+    // Parse wss URL para makuha host at path
+    const url = new URL(MQTT_HOST);
+    const clientId = "WebDash-" + Math.floor(Math.random() * 0xffff).toString(16);
 
-    const tempNumberEl = document.getElementById("temp-number");
-    const tempRawEl = document.getElementById("temp-raw");
-    const tempEmojiEl = document.getElementById("temp-emoji");
+    // Paho client: host, port, path, clientId
+    const client = new Paho.MQTT.Client(
+      url.hostname,
+      Number(url.port),
+      url.pathname,
+      clientId
+    );
 
-    const humNumberEl = document.getElementById("hum-number");
-    const humRawEl = document.getElementById("hum-raw");
-    const humEmojiEl = document.getElementById("hum-emoji");
-
-    const windSpeedNumberEl = document.getElementById("wind-speed-number");
-    const windSpeedRawEl   = document.getElementById("wind-speed-raw");
-    const windDirValueEl   = document.getElementById("wind-dir-value");
-    const windDirRawEl     = document.getElementById("wind-dir-raw");
-
-    const pressureNumberEl = document.getElementById("pressure-number");
-    const pressureRawEl    = document.getElementById("pressure-raw");
-    const pressureEmojiEl  = document.getElementById("pressure-emoji");
-
-    const ledStatusEl = document.getElementById("led-status");
-    const ledMsgEl = document.getElementById("led-msg");
-
-    // ---------- MQTT CLIENT ----------
-    const clientId = "webClient-" + Math.random().toString(16).substr(2, 8);
-
-    const options = {
-      clientId,
-      username: MQTT_USERNAME,
-      password: MQTT_PASSWORD,
-      clean: true,
-      reconnectPeriod: 2000,
-      connectTimeout: 30 * 1000,
+    client.onConnectionLost = function(responseObject) {
+      connStatusEl.textContent = "Disconnected from MQTT. Reconnecting...";
+      console.log("Connection lost: ", responseObject.errorMessage);
+      setTimeout(connectMQTT, 3000);
     };
 
-    mqttStatus.textContent = "MQTT: Connecting…";
-    mqttDot.classList.remove("ok", "err");
+    client.onMessageArrived = function(message) {
+      const topic = message.destinationName;
+      const payload = message.payloadString;
+      console.log("MQTT MSG:", topic, payload);
 
-    const client = mqtt.connect(MQTT_URL, options);
-
-    client.on("connect", () => {
-      mqttStatus.textContent = "MQTT: Connected";
-      mqttDot.classList.add("ok");
-      mqttDot.classList.remove("err");
-
-      client.subscribe(TEMP_TOPIC);
-      client.subscribe(HUM_TOPIC);
-      client.subscribe(WIND_SPEED_TOPIC);
-      client.subscribe(WIND_DIR_TOPIC);
-      client.subscribe(PRESSURE_TOPIC);
-      client.subscribe(LED_TOPIC);
-    });
-
-    client.on("reconnect", () => {
-      mqttStatus.textContent = "MQTT: Reconnecting…";
-      mqttDot.classList.remove("ok");
-    });
-
-    client.on("error", (err) => {
-      console.error("MQTT error:", err);
-      mqttStatus.textContent = "MQTT: Error (see console)";
-      mqttDot.classList.remove("ok");
-      mqttDot.classList.add("err");
-    });
-
-    client.on("close", () => {
-      mqttStatus.textContent = "MQTT: Disconnected";
-      mqttDot.classList.remove("ok");
-      mqttDot.classList.add("err");
-    });
-
-    client.on("message", (topic, payload) => {
-      const msg = payload.toString();
-      const now = new Date();
-      lastUpdateEl.textContent = now.toLocaleTimeString();
-
-      if (topic === TEMP_TOPIC) {
-        const value = parseFloat(msg);
-        tempNumberEl.textContent = isNaN(value) ? "--.-" : value.toFixed(1);
-        tempRawEl.textContent = "Raw: " + msg;
-
-        // emoji: cold / hot
-        if (!isNaN(value)) {
-          if (value <= 24) {
-            tempEmojiEl.textContent = "❄️";
-          } else {
-            tempEmojiEl.textContent = "🔥";
-          }
+      if (topic === tempTopic) {
+        tempEl.textContent = parseFloat(payload).toFixed(1);
+      } else if (topic === humTopic) {
+        humEl.textContent = parseFloat(payload).toFixed(1);
+      } else if (topic === pressureTopic) {
+        pressEl.textContent = parseFloat(payload).toFixed(1);
+      } else if (topic === windSpeedTopic) {
+        windSpeedEl.textContent = parseFloat(payload).toFixed(2);
+      } else if (topic === windDirTopic) {
+        windDirEl.textContent = payload;
+      } else if (topic === rainTopic) {
+        // RAIN LOGIC HERE
+        if (payload === "RAIN") {
+          rainEl.innerHTML = 'Raining <span class="emoji">🌧</span>';
+        } else if (payload === "NO_RAIN") {
+          rainEl.innerHTML = 'Sunny Weather <span class="emoji">☀</span>';
         } else {
-          tempEmojiEl.textContent = "🌡️";
+          rainEl.textContent = "--";
         }
-
-        sensorStatus.textContent = "Sensor: OK";
-        sensorDot.classList.add("ok");
-
-      } else if (topic === HUM_TOPIC) {
-        const value = parseFloat(msg);
-        humNumberEl.textContent = isNaN(value) ? "--.-" : value.toFixed(1);
-        humRawEl.textContent = "Raw: " + msg;
-
-        // emoji: dry / comfy / wet
-        if (!isNaN(value)) {
-          if (value < 40) {
-            humEmojiEl.textContent = "🌵";  // dry
-          } else if (value > 60) {
-            humEmojiEl.textContent = "💦";  // wet
-          } else {
-            humEmojiEl.textContent = "🙂";  // comfortable
-          }
-        } else {
-          humEmojiEl.textContent = "💧";
-        }
-
-        sensorStatus.textContent = "Sensor: OK";
-        sensorDot.classList.add("ok");
-
-      } else if (topic === WIND_SPEED_TOPIC) {
-        const value = parseFloat(msg);
-        windSpeedNumberEl.textContent = isNaN(value) ? "--.-" : value.toFixed(1);
-        windSpeedRawEl.textContent = "Speed raw: " + msg;
-
-      } else if (topic === WIND_DIR_TOPIC) {
-        const angle = parseFloat(msg);
-        let compass;
-        if (isNaN(angle)) {
-          compass = msg.trim().toUpperCase(); // assume N/E/S/W
-        } else {
-          compass = angleToCardinal(angle);   // convert 0–360 to N/E/S/W
-        }
-        windDirValueEl.textContent = compass;
-        windDirRawEl.textContent = "Dir raw: " + msg;
-
-      } else if (topic === PRESSURE_TOPIC) {
-        const value = parseFloat(msg);
-        pressureNumberEl.textContent = isNaN(value) ? "----.-" : value.toFixed(1);
-        pressureRawEl.textContent = "Raw: " + msg;
-
-        // simple emoji: low / normal / high pressure
-        if (!isNaN(value)) {
-          if (value < 1000) {
-            pressureEmojiEl.textContent = "🌧️";  // low pressure, possible bad weather
-          } else if (value > 1020) {
-            pressureEmojiEl.textContent = "☀️";  // high pressure, usually clear
-          } else {
-            pressureEmojiEl.textContent = "⛅";  // mid / normal
-          }
-        } else {
-          pressureEmojiEl.textContent = "⛅";
-        }
-
-      } else if (topic === LED_TOPIC) {
-        updateLedStatus(msg);
       }
-    });
+    };
 
-    function setLed(on) {
-      if (!client.connected) {
-        ledMsgEl.textContent = "Not connected to MQTT";
-        return;
-      }
-      const payload = on ? "ON" : "OFF";
-      client.publish(LED_TOPIC, payload);
-      ledMsgEl.textContent = "Sent: " + payload;
+    function connectMQTT() {
+      connStatusEl.textContent = "Connecting to MQTT...";
+      const options = {
+        useSSL: true,
+        userName: MQTT_USER,
+        password: MQTT_PASS,
+        timeout: 5,
+        onSuccess: function() {
+          connStatusEl.textContent = "Connected to MQTT";
+          console.log("MQTT connected");
+          // Subscribe sa lahat ng topics
+          client.subscribe(tempTopic);
+          client.subscribe(humTopic);
+          client.subscribe(pressureTopic);
+          client.subscribe(windSpeedTopic);
+          client.subscribe(windDirTopic);
+          client.subscribe(rainTopic);
+        },
+        onFailure: function(err) {
+          connStatusEl.textContent = "MQTT connect failed. Retrying...";
+          console.error("MQTT connect failed:", err);
+          setTimeout(connectMQTT, 3000);
+        }
+      };
+      client.connect(options);
     }
 
-    function updateLedStatus(msg) {
-      if (msg === "ON") {
-        ledStatusEl.textContent = "ON";
-        ledStatusEl.classList.add("on");
-        ledStatusEl.classList.remove("off");
-      } else if (msg === "OFF") {
-        ledStatusEl.textContent = "OFF";
-        ledStatusEl.classList.add("off");
-        ledStatusEl.classList.remove("on");
-      }
-    }
-
-    // Convert angle (0–360) to simple N/E/S/W
-    function angleToCardinal(angle) {
-      if (isNaN(angle)) return "--";
-      let a = angle % 360;
-      if (a < 0) a += 360;
-
-      // N: 315–360 or 0–45
-      // E: 45–135
-      // S: 135–225
-      // W: 225–315
-      if (a >= 315 || a < 45) return "N";
-      if (a >= 45 && a < 135) return "E";
-      if (a >= 135 && a < 225) return "S";
-      return "W";
-    }
+    connectMQTT();
   </script>
 </body>
 </html>
