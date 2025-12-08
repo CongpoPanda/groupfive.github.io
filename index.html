@@ -208,6 +208,46 @@
       color: var(--muted);
     }
 
+    /* Buttons for remote control */
+    .control-buttons {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 0.35rem 0.5rem;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-weight: 500;
+      color: #0f172a;
+      transition: transform 0.08s ease-out, box-shadow 0.12s, background 0.12s;
+    }
+
+    .btn:active {
+      transform: translateY(1px) scale(0.99);
+      box-shadow: none;
+    }
+
+    .btn-on {
+      background: linear-gradient(135deg, #22c55e, #4ade80);
+      box-shadow: 0 8px 18px rgba(34, 197, 94, 0.45);
+    }
+
+    .btn-off {
+      background: linear-gradient(135deg, #ef4444, #f97373);
+      box-shadow: 0 8px 18px rgba(239, 68, 68, 0.45);
+    }
+
+    .btn[disabled] {
+      opacity: 0.5;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
     footer {
       margin-top: 1.25rem;
       font-size: 0.7rem;
@@ -316,7 +356,7 @@
         </div>
       </div>
 
-      <!-- Summary Mood Card -->
+      <!-- Weather Mood -->
       <div class="card">
         <div class="card-header">
           <div class="card-title">Weather Mood</div>
@@ -324,6 +364,29 @@
         </div>
         <div class="subtext" id="mood-text">
           Waiting for data from station…
+        </div>
+      </div>
+
+      <!-- Remote Control Card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Remote Control</div>
+          <div class="card-icon">🕹️</div>
+        </div>
+        <div class="subtext">
+          Toggle station LED + buzzer from here.
+        </div>
+        <div class="control-buttons">
+          <button class="btn btn-on" id="btn-on" onclick="sendLedCommand('ON')" disabled>
+            ⚡ Turn ON
+          </button>
+          <button class="btn btn-off" id="btn-off" onclick="sendLedCommand('OFF')" disabled>
+            ⏻ Turn OFF
+          </button>
+        </div>
+        <div class="row">
+          <span class="subtext">LED Status:</span>
+          <span class="badge" id="led-status-badge">Unknown</span>
         </div>
       </div>
     </div>
@@ -346,6 +409,7 @@
     const TOPIC_WINDSPD   = "cpe102/group5/windspeed";
     const TOPIC_WINDDIR   = "cpe102/group5/winddir";
     const TOPIC_RAIN      = "cpe102/group5/rain";
+    const TOPIC_LED       = "cpe102/group5/led"; // control topic
 
     const mqttDot     = document.getElementById("mqtt-dot");
     const mqttStatus  = document.getElementById("mqtt-status");
@@ -374,7 +438,12 @@
     const moodEmoji   = document.getElementById("mood-emoji");
     const moodText    = document.getElementById("mood-text");
 
+    const btnOn       = document.getElementById("btn-on");
+    const btnOff      = document.getElementById("btn-off");
+    const ledStatusBadge = document.getElementById("led-status-badge");
+
     let lastWindSpeed = 0;
+    let ledLastState  = "Unknown";
 
     // ====== Helpers ======
     function setBadge(el, text, type) {
@@ -428,6 +497,17 @@
       moodText.textContent = text;
     }
 
+    function updateLedStatus(state) {
+      ledLastState = state;
+      if (state === "ON") {
+        setBadge(ledStatusBadge, "ON", "good");
+      } else if (state === "OFF") {
+        setBadge(ledStatusBadge, "OFF", "bad");
+      } else {
+        setBadge(ledStatusBadge, "Unknown", "");
+      }
+    }
+
     // ====== MQTT Client Setup ======
     const clientId = "webDashboard-" + Math.floor(Math.random() * 100000);
     const client = new Paho.MQTT.Client(MQTT_HOST, MQTT_PORT, "/mqtt", clientId);
@@ -437,6 +517,8 @@
       mqttDot.classList.add("err");
       mqttStatus.textContent = "MQTT: Disconnected";
       console.error("Connection lost:", response.errorMessage);
+      btnOn.disabled = true;
+      btnOff.disabled = true;
     };
 
     client.onMessageArrived = (message) => {
@@ -550,17 +632,44 @@
           client.subscribe(TOPIC_WINDSPD);
           client.subscribe(TOPIC_WINDDIR);
           client.subscribe(TOPIC_RAIN);
+          // control topic (optional to subscribe; MCU doesn't publish here,
+          // but we keep for consistency)
+          client.subscribe(TOPIC_LED);
+
+          btnOn.disabled = false;
+          btnOff.disabled = false;
+          updateLedStatus("Unknown");
         },
         onFailure: (err) => {
           mqttDot.classList.remove("ok");
           mqttDot.classList.add("err");
           mqttStatus.textContent = "MQTT: Failed (retrying…)";
           console.error("MQTT connect failed:", err.errorMessage);
+          btnOn.disabled = true;
+          btnOff.disabled = true;
           setTimeout(connectMQTT, 3000);
         }
       };
 
       client.connect(options);
+    }
+
+    // ====== LED CONTROL PUBLISHER ======
+    function sendLedCommand(cmd) {
+      if (!client.isConnected()) {
+        alert("MQTT not connected yet. Please wait...");
+        return;
+      }
+      const msg = new Paho.MQTT.Message(cmd);
+      msg.destinationName = TOPIC_LED;
+      client.send(msg);
+
+      updateLedStatus(cmd);
+      if (cmd === "ON") {
+        console.log("Sent LED ON command");
+      } else if (cmd === "OFF") {
+        console.log("Sent LED OFF command");
+      }
     }
 
     connectMQTT();
