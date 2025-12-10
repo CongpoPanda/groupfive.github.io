@@ -510,23 +510,36 @@
 
     // ====== MQTT Client Setup ======
     const clientId = "webDashboard-" + Math.floor(Math.random() * 100000);
-    const client = new Paho.MQTT.Client(MQTT_HOST, MQTT_PORT, "/mqtt", clientId);
 
-    client.onConnectionLost = (response) => {
+    // Use explicit wss:// URL — this is more reliable for browser websockets
+    const WS_URL = `wss://${MQTT_HOST}:${MQTT_PORT}/mqtt`;
+    let client;
+    try {
+      client = new Paho.MQTT.Client(WS_URL, clientId);
+    } catch (e) {
+      console.error("Failed to construct Paho client:", e);
+      mqttStatus.textContent = "MQTT: Client constructor failed (see console)";
+    }
+
+    client && (client.onConnectionLost = (response) => {
+      // Response can be an object or undefined — log everything
+      console.error("Connection lost:", response);
       mqttDot.classList.remove("ok");
       mqttDot.classList.add("err");
       mqttStatus.textContent = "MQTT: Disconnected";
-      console.error("Connection lost:", response.errorMessage);
       btnOn.disabled = true;
       btnOff.disabled = true;
-    };
+      // update led state to unknown because connection lost
+      updateLedStatus("Unknown");
+    });
 
-    client.onMessageArrived = (message) => {
+    client && (client.onMessageArrived = (message) => {
       const topic = message.destinationName;
-      const payload = message.payloadString.trim();
+      const payload = (message.payloadString || "").trim();
       const ts = nowTimeString();
       lastUpdate.textContent = ts;
 
+      // Temperature
       if (topic === TOPIC_TEMP) {
         const v = parseFloat(payload);
         if (!isNaN(v)) {
@@ -544,6 +557,7 @@
         }
       }
 
+      // Humidity
       if (topic === TOPIC_HUM) {
         const v = parseFloat(payload);
         if (!isNaN(v)) {
@@ -561,6 +575,7 @@
         }
       }
 
+      // Wind speed
       if (topic === TOPIC_WINDSPD) {
         const v = parseFloat(payload);
         if (!isNaN(v)) {
@@ -587,10 +602,12 @@
         }
       }
 
+      // Wind direction
       if (topic === TOPIC_WINDDIR) {
         windDirValue.textContent = payload || "--";
       }
 
+      // Rain
       if (topic === TOPIC_RAIN) {
         if (payload === "RAIN") {
           rainText.textContent = "Raining";
@@ -611,9 +628,37 @@
       }
 
       updateMood();
-    };
+    });
+
+    // ====== Connection + retry/backoff logic ======
+    let retryCount = 0;
+    const MAX_BACKOFF_MS = 30 * 1000; // cap backoff
+    function getBackoffMs(attempt) {
+      // exponential backoff with jitter
+      const base = Math.min(1000 * Math.pow(2, attempt), MAX_BACKOFF_MS);
+      return base / 2 + Math.random() * (base / 2);
+    }
+
+    function isConnected() {
+      // Paho has client.isConnected() sometimes — guard defensively
+      try {
+        if (client && typeof client.isConnected === "function") {
+          return client.isConnected();
+        }
+      } catch (e) {
+        // ignore
+      }
+      // fallback to UI indicator
+      return mqttDot.classList.contains("ok");
+    }
 
     function connectMQTT() {
+      if (!client) {
+        console.error("MQTT client not created.");
+        mqttStatus.textContent = "MQTT: Client error (see console)";
+        return;
+      }
+
       mqttDot.classList.remove("ok", "err");
       mqttStatus.textContent = "MQTT: Connecting…";
 
@@ -623,59 +668,85 @@
         password: MQTT_PASS,
         timeout: 10,
         onSuccess: () => {
+          console.log("MQTT connected (onSuccess)");
           mqttDot.classList.remove("err");
           mqttDot.classList.add("ok");
           mqttStatus.textContent = "MQTT: Connected";
 
-          client.subscribe(TOPIC_TEMP);
-          client.subscribe(TOPIC_HUM);
-          client.subscribe(TOPIC_WINDSPD);
-          client.subscribe(TOPIC_WINDDIR);
-          client.subscribe(TOPIC_RAIN);
-          // control topic (optional to subscribe; MCU doesn't publish here,
-          // but we keep for consistency)
-          client.subscribe(TOPIC_LED);
+          // reset retry counter
+          retryCount = 0;
+
+          // subscribe
+          try {
+            client.subscribe(TOPIC_TEMP);
+            client.subscribe(TOPIC_HUM);
+            client.subscribe(TOPIC_WINDSPD);
+            client.subscribe(TOPIC_WINDDIR);
+            client.subscribe(TOPIC_RAIN);
+            client.subscribe(TOPIC_LED); // optional
+          } catch (e) {
+            console.error("Subscribe failed:", e);
+          }
 
           btnOn.disabled = false;
           btnOff.disabled = false;
           updateLedStatus("Unknown");
         },
         onFailure: (err) => {
+          // err sometimes is an object with errorMessage and invocationContext
+          console.error("MQTT connect failed (onFailure):", err);
           mqttDot.classList.remove("ok");
           mqttDot.classList.add("err");
-          mqttStatus.textContent = "MQTT: Failed (retrying…)";
-          console.error("MQTT connect failed:", err.errorMessage);
+          mqttStatus.textContent = "MQTT: Failed (see console)";
+
           btnOn.disabled = true;
           btnOff.disabled = true;
-          setTimeout(connectMQTT, 3000);
-        }
+
+          // backoff retry
+          const backoff = getBackoffMs(retryCount++);
+          console.warn(`Retrying MQTT connect in ${Math.round(backoff)} ms (attempt ${retryCount})`);
+          setTimeout(connectMQTT, backoff);
+        },
+        // catch websocket-level errors too (some environments)
+        mqttVersion: 4
       };
 
-      client.connect(options);
+      try {
+        client.connect(options);
+      } catch (e) {
+        console.error("client.connect() threw:", e);
+        mqttDot.classList.remove("ok");
+        mqttDot.classList.add("err");
+        mqttStatus.textContent = "MQTT: Connect error (see console)";
+        const backoff = getBackoffMs(retryCount++);
+        setTimeout(connectMQTT, backoff);
+      }
     }
 
     // ====== LED CONTROL PUBLISHER ======
     function sendLedCommand(cmd) {
-      if (!client.isConnected()) {
-        alert("MQTT not connected yet. Please wait...");
+      if (!isConnected()) {
+        alert("MQTT not connected yet. Please wait or check the console for errors.");
         return;
       }
-      const msg = new Paho.MQTT.Message(cmd);
-      msg.destinationName = TOPIC_LED;
-      client.send(msg);
-
-      updateLedStatus(cmd);
-      if (cmd === "ON") {
-        console.log("Sent LED ON command");
-      } else if (cmd === "OFF") {
-        console.log("Sent LED OFF command");
+      try {
+        const msg = new Paho.MQTT.Message(cmd);
+        msg.destinationName = TOPIC_LED;
+        client.send(msg);
+        updateLedStatus(cmd);
+        console.log("Sent LED command:", cmd);
+      } catch (e) {
+        console.error("Failed to send LED command:", e);
+        alert("Failed to send command — see console.");
       }
     }
 
+    // Kick off initial connect
     connectMQTT();
+
+    // Helpful hint printed to console to make debugging easier
+    console.log("MQTT dashboard initialized. WebSocket URL:", WS_URL);
+    console.log("If connection fails: 1) Check browser console for TLS/WebSocket errors; 2) Make sure page is served over http(s) (not file://); 3) Confirm HiveMQ Cloud WebSocket settings, username/password and allowed origins; 4) Try connecting from another network or HiveMQ demo client.");
   </script>
 </body>
 </html>
-
-
-
