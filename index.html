@@ -340,7 +340,7 @@
         </div>
       </div>
 
-      <!-- “Air Pressure” (Estimated) -->
+      <!-- Air Pressure (Estimated from wind) -->
       <div class="card">
         <div class="card-header">
           <div class="card-title">Air Pressure (est.)</div>
@@ -351,7 +351,7 @@
           <span class="unit">hPa</span>
         </div>
         <div class="row">
-          <span class="subtext">BME280 sensor</span>
+          <span class="subtext">Estimated from wind speed</span>
           <span class="badge" id="pressure-badge">--</span>
         </div>
       </div>
@@ -398,12 +398,13 @@
   </footer>
 
   <script>
-    // ====== MQTT CONFIG (WebSocket) ======
-    const MQTT_HOST = "cef384719390434ea2501c6c4845c027.s1.eu.hivemq.cloud";
-    const MQTT_PORT = 8884; // WebSocket secure
-    const MQTT_PATH = "/mqtt"; // HiveMQ Cloud websocket path
+    // ====== MQTT CONFIG (WebSocket TLS) ======
+    // Full WSS URI from your HiveMQ Cloud "TLS WebSocket URL"
+    const MQTT_URI = "wss://cef384719390434ea2501c6c4845c027.s1.eu.hivemq.cloud:8884/mqtt";
+
+    // These must match the MQTT credentials in HiveMQ Cloud "Access Management"
     const MQTT_USER = "LerDemo1";
-    const MQTT_PASS = "LerDemo1";
+    const MQTT_PASS = "LerDemo1"; // <- be sure this is the real password
 
     const TOPIC_TEMP      = "cpe102/group5/temperature";
     const TOPIC_HUM       = "cpe102/group5/humidity";
@@ -510,12 +511,13 @@
       }
     }
 
-    // ====== MQTT Client Setup (use host+port+path constructor) ======
+    // ====== MQTT Client Setup (using full WSS URI) ======
     const clientId = "webDashboard-" + Math.floor(Math.random() * 100000);
     let client = null;
     try {
-      client = new Paho.MQTT.Client(MQTT_HOST, Number(MQTT_PORT), MQTT_PATH, clientId);
-      console.log("Paho client created:", MQTT_HOST, MQTT_PORT, MQTT_PATH, clientId);
+      // Per HiveMQ Cloud recommendation: pass full wss:// URI as first argument
+      client = new Paho.MQTT.Client(MQTT_URI, clientId);
+      console.log("Paho client created:", MQTT_URI, clientId);
     } catch (e) {
       console.error("Failed to create Paho client:", e);
       mqttStatus.textContent = "MQTT: Client error (see console)";
@@ -625,6 +627,13 @@
           }
         }
 
+        // Optional: listen for LED status echoes on TOPIC_LED
+        if (topic === TOPIC_LED) {
+          if (payload === "ON" || payload === "OFF") {
+            updateLedStatus(payload);
+          }
+        }
+
         updateMood();
       };
     }
@@ -642,7 +651,8 @@
         timeout: 10,
         onSuccess: () => {
           console.log("MQTT connected");
-          mqttDot.classList.remove("err"); mqttDot.classList.add("ok");
+          mqttDot.classList.remove("err");
+          mqttDot.classList.add("ok");
           mqttStatus.textContent = "MQTT: Connected";
           // subscribe to topics
           try {
@@ -655,16 +665,19 @@
           } catch (e) {
             console.error("Subscribe error:", e);
           }
-          btnOn.disabled = false; btnOff.disabled = false;
+          btnOn.disabled = false;
+          btnOff.disabled = false;
           updateLedStatus("Unknown");
         },
         onFailure: (err) => {
           console.error("MQTT connect failed (onFailure):", err);
-          mqttDot.classList.remove("ok"); mqttDot.classList.add("err");
+          mqttDot.classList.remove("ok");
+          mqttDot.classList.add("err");
           mqttStatus.textContent = "MQTT: Failed (see console)";
-          btnOn.disabled = true; btnOff.disabled = true;
+          btnOn.disabled = true;
+          btnOff.disabled = true;
           // retry after backoff
-          const backoff = Math.min(3000 * Math.pow(2, Math.random()*2), 30000);
+          const backoff = Math.min(3000 * Math.pow(2, Math.random() * 2), 30000);
           console.warn("Retrying connect in", Math.round(backoff), "ms");
           setTimeout(connectMQTT, backoff);
         }
@@ -672,10 +685,11 @@
 
       try {
         client.connect(options);
-        console.log("client.connect() called");
+        console.log("client.connect() called to", MQTT_URI);
       } catch (e) {
         console.error("client.connect() threw:", e);
-        mqttDot.classList.remove("ok"); mqttDot.classList.add("err");
+        mqttDot.classList.remove("ok");
+        mqttDot.classList.add("err");
         mqttStatus.textContent = "MQTT: Connect exception (see console)";
         setTimeout(connectMQTT, 5000);
       }
@@ -695,27 +709,12 @@
         console.log("Sent LED command:", cmd);
       } catch (e) {
         console.error("Failed to send LED command:", e);
-        alert("Failed to send command — see console.");
+        alert("Failed to send command (see console).");
       }
     }
 
-    // start connection
-    console.log("Dashboard starting — attempting MQTT websocket connect to", MQTT_HOST, "port", MQTT_PORT, "path", MQTT_PATH);
+    console.log("Dashboard starting — attempting MQTT WebSocket TLS connect to", MQTT_URI);
     connectMQTT();
-
-    // Extra diagnostic helper (paste into console to test raw WS handshake)
-    /* 
-    (function(){
-      const url = `wss://${MQTT_HOST}:${MQTT_PORT}${MQTT_PATH}`;
-      console.log("Raw WS test URL:", url);
-      try {
-        const ws = new WebSocket(url);
-        ws.onopen = () => { console.log("Raw WS open — TLS handshake OK"); ws.close(); };
-        ws.onerror = (e) => { console.error("Raw WS error:", e); };
-        ws.onclose = (c) => { console.log("Raw WS closed:", c); };
-      } catch(e){ console.error("WS constructor threw:", e); }
-    })();
-    */
   </script>
 </body>
 </html>
