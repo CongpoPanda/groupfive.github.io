@@ -4,12 +4,11 @@
   <meta charset="UTF-8" />
   <title>GROUP 5 · IoT Weather Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Paho MQTT (must load before our script) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.2/mqttws31.min.js"></script>
-</head>
 
-  <!-- Paho MQTT -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.2/mqttws31.min.js"></script>
+  <!-- HiveMQ-style MQTT client (MQTT.js) -->
+  <!-- Browser usage from HiveMQ docs: <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script> -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
   <style>
     :root {
       --bg: #020617;
@@ -212,7 +211,6 @@
       color: var(--muted);
     }
 
-    /* Buttons for remote control */
     .control-buttons {
       display: flex;
       gap: 0.5rem;
@@ -402,34 +400,20 @@
   </footer>
 
   <script>
-  const MQTT_URI = "wss://cef384719390434ea2501c6c4845c027.s1.eu.hivemq.cloud:8884/mqtt";
-  const clientId = "webDashboard-" + Math.floor(Math.random() * 100000);
+    // -------- MQTT / HiveMQ Cloud config (MQTT.js) --------
+    const MQTT_URL  = "wss://cef384719390434ea2501c6c4845c027.s1.eu.hivemq.cloud:8884/mqtt";
 
-  let client = null;
-  try {
-    client = new Paho.MQTT.Client(MQTT_URI, clientId);
-    console.log("Paho client created:", MQTT_URI, clientId);
-  } catch (e) {
-    console.error("Failed to create Paho client:", e);
-    mqttStatus.textContent = "MQTT: Client error (see console)";
-  }
+    const MQTT_USER = "LerDemo1";   // must match HiveMQ Cloud credentials
+    const MQTT_PASS = "LerDemo1";
 
-  // ... rest of your MQTT code ...
-</script>
+    const TOPIC_TEMP    = "cpe102/group5/temperature";
+    const TOPIC_HUM     = "cpe102/group5/humidity";
+    const TOPIC_WINDSPD = "cpe102/group5/windspeed";
+    const TOPIC_WINDDIR = "cpe102/group5/winddir";
+    const TOPIC_RAIN    = "cpe102/group5/rain";
+    const TOPIC_LED     = "cpe102/group5/led";
 
-
-    // These must match the MQTT credentials in HiveMQ Cloud "Access Management"
-    const MQTT_USER = "LerDemo1";
-    const MQTT_PASS = "LerDemo1"; // <- be sure this is the real password
-
-    const TOPIC_TEMP      = "cpe102/group5/temperature";
-    const TOPIC_HUM       = "cpe102/group5/humidity";
-    const TOPIC_WINDSPD   = "cpe102/group5/windspeed";
-    const TOPIC_WINDDIR   = "cpe102/group5/winddir";
-    const TOPIC_RAIN      = "cpe102/group5/rain";
-    const TOPIC_LED       = "cpe102/group5/led"; // control topic
-
-    // UI references
+    // -------- UI references --------
     const mqttDot     = document.getElementById("mqtt-dot");
     const mqttStatus  = document.getElementById("mqtt-status");
     const lastUpdate  = document.getElementById("last-update");
@@ -464,7 +448,7 @@
     let lastWindSpeed = 0;
     let ledLastState  = "Unknown";
 
-    // ====== Helpers ======
+    // -------- Helper functions --------
     function setBadge(el, text, type) {
       el.textContent = text;
       el.classList.remove("good", "warn", "bad");
@@ -477,11 +461,9 @@
     }
 
     function estimatePressureFromWind(w) {
-      // Simple fun approximation:
-      // base 1010 hPa - (w * 1.8), clamp 980–1015
       let p = 1010 - (w * 1.8);
       if (p > 1015) p = 1015;
-      if (p < 980) p = 980;
+      if (p < 980)  p = 980;
       return p;
     }
 
@@ -496,24 +478,24 @@
       if (!isNaN(t) && !isNaN(h)) {
         if (rainRaw === "Raining") {
           emoji = "🌧️";
-          text = "Rainy vibes. Bring an umbrella just in case!";
+          text  = "Rainy vibes. Bring an umbrella just in case!";
         } else if (t > 32 && h > 70) {
           emoji = "🥵";
-          text = "Hot and humid. Hydrate well!";
+          text  = "Hot and humid. Hydrate well!";
         } else if (t < 24 && h > 60) {
           emoji = "🌧️";
-          text = "Cool and a bit moist, possible light rain.";
+          text  = "Cool and a bit moist, possible light rain.";
         } else if (t >= 24 && t <= 32 && h >= 40 && h <= 70) {
           emoji = "😎";
-          text = "Nice weather! Sunny but still comfortable.";
+          text  = "Nice weather! Sunny but still comfortable.";
         } else if (t < 22) {
           emoji = "🧥";
-          text = "Chilly air. Jacket weather!";
+          text  = "Chilly air. Jacket weather!";
         }
       }
 
       moodEmoji.textContent = emoji;
-      moodText.textContent = text;
+      moodText.textContent  = text;
     }
 
     function updateLedStatus(state) {
@@ -527,211 +509,177 @@
       }
     }
 
-    // ====== MQTT Client Setup (using full WSS URI) ======
-    const clientId = "webDashboard-" + Math.floor(Math.random() * 100000);
-    let client = null;
-    try {
-      // Per HiveMQ Cloud recommendation: pass full wss:// URI as first argument
-      client = new Paho.MQTT.Client(MQTT_URI, clientId);
-      console.log("Paho client created:", MQTT_URI, clientId);
-    } catch (e) {
-      console.error("Failed to create Paho client:", e);
-      mqttStatus.textContent = "MQTT: Client error (see console)";
-    }
+    // -------- MQTT.js client setup --------
+    console.log("Dashboard starting — trying MQTT.js connect to", MQTT_URL);
 
-    if (client) {
-      client.onConnectionLost = (response) => {
-        console.error("Connection lost:", response);
-        mqttDot.classList.remove("ok");
-        mqttDot.classList.add("err");
-        mqttStatus.textContent = "MQTT: Disconnected";
-        btnOn.disabled = true;
-        btnOff.disabled = true;
-        updateLedStatus("Unknown");
-      };
+    const client = mqtt.connect(MQTT_URL, {
+      clean: true,
+      connectTimeout: 4000,
+      reconnectPeriod: 4000,
+      username: MQTT_USER,
+      password: MQTT_PASS
+    });
 
-      client.onMessageArrived = (message) => {
-        const topic = message.destinationName;
-        const payload = (message.payloadString || "").trim();
-        lastUpdate.textContent = nowTimeString();
+    client.on("connect", () => {
+      console.log("MQTT.js connected");
+      mqttDot.classList.remove("err");
+      mqttDot.classList.add("ok");
+      mqttStatus.textContent = "MQTT: Connected";
 
-        // Temperature
-        if (topic === TOPIC_TEMP) {
-          const v = parseFloat(payload);
-          if (!isNaN(v)) {
-            tempValue.textContent = v.toFixed(1);
-            if (v < 24) {
-              setBadge(tempBadge, "Cool", "good");
-              tempRemark.textContent = "Medyo malamig pa sa labas.";
-            } else if (v <= 32) {
-              setBadge(tempBadge, "Comfortable", "good");
-              tempRemark.textContent = "Saktong init lang.";
-            } else {
-              setBadge(tempBadge, "Mainit", "warn");
-              tempRemark.textContent = "Ingat sa init, hydrate!";
-            }
-          }
+      // subscribe to topics
+      const topics = [TOPIC_TEMP, TOPIC_HUM, TOPIC_WINDSPD, TOPIC_WINDDIR, TOPIC_RAIN, TOPIC_LED];
+      client.subscribe(topics, { qos: 0 }, (err, granted) => {
+        if (err) {
+          console.error("Subscribe error:", err);
+        } else {
+          console.log("Subscribed to:", granted.map(g => g.topic).join(", "));
         }
+      });
 
-        // Humidity
-        if (topic === TOPIC_HUM) {
-          const v = parseFloat(payload);
-          if (!isNaN(v)) {
-            humValue.textContent = v.toFixed(1);
-            if (v < 40) {
-              setBadge(humBadge, "Dry", "warn");
-              humRemark.textContent = "Medyo dry ang hangin.";
-            } else if (v <= 70) {
-              setBadge(humBadge, "Okay", "good");
-              humRemark.textContent = "Comfortable humidity.";
-            } else {
-              setBadge(humBadge, "Humid", "warn");
-              humRemark.textContent = "Malagkit na ang panahon.";
-            }
-          }
-        }
+      btnOn.disabled = false;
+      btnOff.disabled = false;
+      updateLedStatus("Unknown");
+    });
 
-        // Wind speed
-        if (topic === TOPIC_WINDSPD) {
-          const v = parseFloat(payload);
-          if (!isNaN(v)) {
-            lastWindSpeed = v;
-            windSpeedValue.textContent = v.toFixed(2);
-            if (v < 1.0) {
-              setBadge(windBadge, "Calm", "good");
-            } else if (v <= 5.0) {
-              setBadge(windBadge, "Breezy", "good");
-            } else {
-              setBadge(windBadge, "Windy", "warn");
-            }
+    client.on("reconnect", () => {
+      console.log("MQTT.js reconnecting…");
+      mqttDot.classList.remove("ok");
+      mqttDot.classList.add("err");
+      mqttStatus.textContent = "MQTT: Reconnecting…";
+      btnOn.disabled = true;
+      btnOff.disabled = true;
+    });
 
-            // update estimated pressure
-            const p = estimatePressureFromWind(v);
-            pressureValue.textContent = p.toFixed(1);
-            if (p >= 1005) {
-              setBadge(pressureBadge, "High-ish", "good");
-            } else if (p >= 995) {
-              setBadge(pressureBadge, "Normal", "good");
-            } else {
-              setBadge(pressureBadge, "Low-ish", "warn");
-            }
-          }
-        }
+    client.on("close", () => {
+      console.log("MQTT.js connection closed");
+      mqttDot.classList.remove("ok");
+      mqttDot.classList.add("err");
+      mqttStatus.textContent = "MQTT: Disconnected";
+      btnOn.disabled = true;
+      btnOff.disabled = true;
+    });
 
-        // Wind direction
-        if (topic === TOPIC_WINDDIR) {
-          windDirValue.textContent = payload || "--";
-        }
+    client.on("error", (err) => {
+      console.error("MQTT.js error:", err);
+    });
 
-        // Rain
-        if (topic === TOPIC_RAIN) {
-          if (payload === "RAIN") {
-            rainText.textContent = "Raining";
-            rainEmoji.textContent = "🌧️";
-            rainDetail.textContent = "Rain sensor detects water.";
-            setBadge(rainBadge, "Wet", "bad");
-          } else if (payload === "NO_RAIN") {
-            rainText.textContent = "Sunny";
-            rainEmoji.textContent = "☀️";
-            rainDetail.textContent = "No rain detected, weather looks clear.";
-            setBadge(rainBadge, "Dry", "good");
+    client.on("message", (topic, payloadBuf) => {
+      const payload = payloadBuf.toString().trim();
+      lastUpdate.textContent = nowTimeString();
+
+      // Temperature
+      if (topic === TOPIC_TEMP) {
+        const v = parseFloat(payload);
+        if (!isNaN(v)) {
+          tempValue.textContent = v.toFixed(1);
+          if (v < 24) {
+            setBadge(tempBadge, "Cool", "good");
+            tempRemark.textContent = "Medyo malamig pa sa labas.";
+          } else if (v <= 32) {
+            setBadge(tempBadge, "Comfortable", "good");
+            tempRemark.textContent = "Saktong init lang.";
           } else {
-            rainText.textContent = "--";
-            rainEmoji.textContent = "☁️";
-            rainDetail.textContent = "Sensor status unknown.";
-            setBadge(rainBadge, "Unknown", "warn");
+            setBadge(tempBadge, "Mainit", "warn");
+            tempRemark.textContent = "Ingat sa init, hydrate!";
           }
         }
-
-        // Optional: listen for LED status echoes on TOPIC_LED
-        if (topic === TOPIC_LED) {
-          if (payload === "ON" || payload === "OFF") {
-            updateLedStatus(payload);
-          }
-        }
-
-        updateMood();
-      };
-    }
-
-    // ====== Connect + retry logic ======
-    function connectMQTT() {
-      if (!client) return;
-      mqttDot.classList.remove("ok", "err");
-      mqttStatus.textContent = "MQTT: Connecting…";
-
-      const options = {
-        useSSL: true,
-        userName: MQTT_USER,
-        password: MQTT_PASS,
-        timeout: 10,
-        onSuccess: () => {
-          console.log("MQTT connected");
-          mqttDot.classList.remove("err");
-          mqttDot.classList.add("ok");
-          mqttStatus.textContent = "MQTT: Connected";
-          // subscribe to topics
-          try {
-            client.subscribe(TOPIC_TEMP);
-            client.subscribe(TOPIC_HUM);
-            client.subscribe(TOPIC_WINDSPD);
-            client.subscribe(TOPIC_WINDDIR);
-            client.subscribe(TOPIC_RAIN);
-            client.subscribe(TOPIC_LED);
-          } catch (e) {
-            console.error("Subscribe error:", e);
-          }
-          btnOn.disabled = false;
-          btnOff.disabled = false;
-          updateLedStatus("Unknown");
-        },
-        onFailure: (err) => {
-          console.error("MQTT connect failed (onFailure):", err);
-          mqttDot.classList.remove("ok");
-          mqttDot.classList.add("err");
-          mqttStatus.textContent = "MQTT: Failed (see console)";
-          btnOn.disabled = true;
-          btnOff.disabled = true;
-          // retry after backoff
-          const backoff = Math.min(3000 * Math.pow(2, Math.random() * 2), 30000);
-          console.warn("Retrying connect in", Math.round(backoff), "ms");
-          setTimeout(connectMQTT, backoff);
-        }
-      };
-
-      try {
-        client.connect(options);
-        console.log("client.connect() called to", MQTT_URI);
-      } catch (e) {
-        console.error("client.connect() threw:", e);
-        mqttDot.classList.remove("ok");
-        mqttDot.classList.add("err");
-        mqttStatus.textContent = "MQTT: Connect exception (see console)";
-        setTimeout(connectMQTT, 5000);
       }
-    }
 
-    // publish LED control
+      // Humidity
+      if (topic === TOPIC_HUM) {
+        const v = parseFloat(payload);
+        if (!isNaN(v)) {
+          humValue.textContent = v.toFixed(1);
+          if (v < 40) {
+            setBadge(humBadge, "Dry", "warn");
+            humRemark.textContent = "Medyo dry ang hangin.";
+          } else if (v <= 70) {
+            setBadge(humBadge, "Okay", "good");
+            humRemark.textContent = "Comfortable humidity.";
+          } else {
+            setBadge(humBadge, "Humid", "warn");
+            humRemark.textContent = "Malagkit na ang panahon.";
+          }
+        }
+      }
+
+      // Wind speed
+      if (topic === TOPIC_WINDSPD) {
+        const v = parseFloat(payload);
+        if (!isNaN(v)) {
+          lastWindSpeed = v;
+          windSpeedValue.textContent = v.toFixed(2);
+          if (v < 1.0) {
+            setBadge(windBadge, "Calm", "good");
+          } else if (v <= 5.0) {
+            setBadge(windBadge, "Breezy", "good");
+          } else {
+            setBadge(windBadge, "Windy", "warn");
+          }
+
+          const p = estimatePressureFromWind(v);
+          pressureValue.textContent = p.toFixed(1);
+          if (p >= 1005) {
+            setBadge(pressureBadge, "High-ish", "good");
+          } else if (p >= 995) {
+            setBadge(pressureBadge, "Normal", "good");
+          } else {
+            setBadge(pressureBadge, "Low-ish", "warn");
+          }
+        }
+      }
+
+      // Wind direction
+      if (topic === TOPIC_WINDDIR) {
+        windDirValue.textContent = payload || "--";
+      }
+
+      // Rain
+      if (topic === TOPIC_RAIN) {
+        if (payload === "RAIN") {
+          rainText.textContent   = "Raining";
+          rainEmoji.textContent  = "🌧️";
+          rainDetail.textContent = "Rain sensor detects water.";
+          setBadge(rainBadge, "Wet", "bad");
+        } else if (payload === "NO_RAIN") {
+          rainText.textContent   = "Sunny";
+          rainEmoji.textContent  = "☀️";
+          rainDetail.textContent = "No rain detected, weather looks clear.";
+          setBadge(rainBadge, "Dry", "good");
+        } else {
+          rainText.textContent   = "--";
+          rainEmoji.textContent  = "☁️";
+          rainDetail.textContent = "Sensor status unknown.";
+          setBadge(rainBadge, "Unknown", "warn");
+        }
+      }
+
+      // LED status echo
+      if (topic === TOPIC_LED) {
+        if (payload === "ON" || payload === "OFF") {
+          updateLedStatus(payload);
+        }
+      }
+
+      updateMood();
+    });
+
+    // -------- Publish control command --------
     function sendLedCommand(cmd) {
-      if (!client || !client.isConnected()) {
+      if (!client.connected) {
         alert("MQTT not connected yet.");
         return;
       }
-      try {
-        const msg = new Paho.MQTT.Message(cmd);
-        msg.destinationName = TOPIC_LED;
-        client.send(msg);
-        updateLedStatus(cmd);
-        console.log("Sent LED command:", cmd);
-      } catch (e) {
-        console.error("Failed to send LED command:", e);
-        alert("Failed to send command (see console).");
-      }
+      client.publish(TOPIC_LED, cmd, { qos: 0, retain: false }, (err) => {
+        if (err) {
+          console.error("Failed to publish LED command:", err);
+          alert("Failed to send command. See console.");
+        } else {
+          console.log("LED command sent:", cmd);
+          updateLedStatus(cmd);
+        }
+      });
     }
-
-    console.log("Dashboard starting — attempting MQTT WebSocket TLS connect to", MQTT_URI);
-    connectMQTT();
   </script>
 </body>
 </html>
-
